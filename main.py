@@ -3,6 +3,10 @@ from dotenv import load_dotenv
 from google import genai
 import argparse
 from google.genai import types
+from prompts import system_prompt
+from call_functions import available_functions, call_function
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Chatbot")
@@ -19,15 +23,33 @@ def main():
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents = messages)
+        contents = messages,
+        config=types.GenerateContentConfig(
+            tools=[available_functions], system_instruction=system_prompt
+            )
+        )
     if response.usage_metadata == None:
         raise RuntimeError
-    print("Hello from ai-agent!")
     if args.verbose:
         print("User prompt: ", args.user_prompt)
         print("Prompt tokens: ",response.usage_metadata.prompt_token_count)
         print("Response tokens: ",response.usage_metadata.candidates_token_count)
-    print(response.text)
+    
+    if response.function_calls:
+        new_list = []
+        for item in response.function_calls:
+            result=call_function(item, args.verbose)
+            if not result.parts:
+                raise Exception("result.parts is empty")
+            if not result.parts[0].function_response:
+                raise Exception("result.parts[0].function_response is empty")
+            if not result.parts[0].function_response.response:
+                raise Exception (".parts[0].function_response.response is empty")
+            new_list.append(result.parts[0])
+            if args.verbose:
+                print(f"-> {result.parts[0].function_response.response}")
+    else:  
+        print(response.text)
 
 if __name__ == "__main__":
     main()
