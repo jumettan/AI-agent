@@ -5,9 +5,15 @@ import argparse
 from google.genai import types
 from prompts import system_prompt
 from call_functions import available_functions, call_function
-
-
-
+def response_func(client, messages):
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents = messages,
+        config=types.GenerateContentConfig(
+            tools=[available_functions], system_instruction=system_prompt
+            )
+        )
+    return response
 def main():
     parser = argparse.ArgumentParser(description="Chatbot")
     parser.add_argument("user_prompt", type=str, help="User prompt")
@@ -21,13 +27,26 @@ def main():
         raise RuntimeError("GEMINI_API_KEY not found. Make sure it's set in your .env file.")
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents = messages,
-        config=types.GenerateContentConfig(
-            tools=[available_functions], system_instruction=system_prompt
-            )
-        )
+    for i in range(20):
+        response = response_func(client, messages)
+
+        if response.candidates:
+            for candidate in response.candidates:
+                messages.append(candidate.content)
+
+        if not response.function_calls:
+            print(response.text)
+            return
+
+        func_resp = []
+        for func_call in response.function_calls:
+            result = call_function(func_call, args.verbose)
+            func_resp.append(result.parts[0])
+
+        messages.append(types.Content(role="user", parts=func_resp))
+
+    print("Maximum iterations reached")
+        
     if response.usage_metadata == None:
         raise RuntimeError
     if args.verbose:
